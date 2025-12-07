@@ -36,69 +36,84 @@ for ARCH in "${ARCHES[@]}"; do
     mkdir -p bin-$ARCH
     cd bin-$ARCH
     
-    XRAY_ARCH=$ARCH
-    XRAY_FILENAME="Xray-linux-${ARCH}.zip"
-    
-    if [ "$ARCH" = "armv7" ]; then
-        XRAY_ARCH="arm32-v7a"
-        XRAY_FILENAME="Xray-linux-arm32-v7a.zip"
+    # Map architecture to Xray release filename
+    XRAY_FILENAME=""
+    if [ "$ARCH" = "amd64" ]; then
+        XRAY_FILENAME="Xray-linux-64.zip"
     elif [ "$ARCH" = "arm64" ]; then
-        XRAY_ARCH="arm64-v8a"
         XRAY_FILENAME="Xray-linux-arm64-v8a.zip"
+    elif [ "$ARCH" = "armv7" ]; then
+        XRAY_FILENAME="Xray-linux-arm32-v7a.zip"
+    else
+        echo "ERROR: Unsupported architecture: $ARCH"
+        cd ..
+        exit 1
     fi
     
     # Get latest Xray version
     XRAY_VERSION=$(curl -s "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -z "$XRAY_VERSION" ]; then
-        echo "Failed to get Xray version, trying to download latest..."
-        XRAY_VERSION="latest"
+        echo "ERROR: Failed to get Xray version"
+        cd ..
+        exit 1
     fi
     
-    echo "Downloading Xray $XRAY_VERSION for $XRAY_ARCH..."
+    echo "Downloading Xray $XRAY_VERSION ($XRAY_FILENAME)..."
     
-    # Try different URL formats
-    XRAY_URL="https://github.com/XTLS/Xray-core/releases/${XRAY_VERSION}/download/${XRAY_FILENAME}"
-    if [ "$XRAY_VERSION" = "latest" ]; then
-        XRAY_URL="https://github.com/XTLS/Xray-core/releases/latest/download/${XRAY_FILENAME}"
-    fi
+    # Download Xray
+    XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_FILENAME}"
     
     # Download with retry
     MAX_RETRIES=3
     RETRY=0
+    SUCCESS=0
     while [ $RETRY -lt $MAX_RETRIES ]; do
-        if wget -q --timeout=30 ${XRAY_URL} -O ${XRAY_FILENAME}; then
-            break
+        if wget -q --timeout=30 ${XRAY_URL} -O ${XRAY_FILENAME} 2>&1; then
+            if [ -f "${XRAY_FILENAME}" ] && [ -s "${XRAY_FILENAME}" ]; then
+                SUCCESS=1
+                break
+            fi
         fi
         RETRY=$((RETRY+1))
-        echo "Download failed, retrying... ($RETRY/$MAX_RETRIES)"
-        sleep 2
+        if [ $RETRY -lt $MAX_RETRIES ]; then
+            echo "Download failed, retrying... ($RETRY/$MAX_RETRIES)"
+            sleep 2
+        fi
     done
     
-    if [ ! -f "${XRAY_FILENAME}" ]; then
+    if [ $SUCCESS -eq 0 ] || [ ! -f "${XRAY_FILENAME}" ]; then
         echo "ERROR: Failed to download Xray binary for $ARCH"
-        echo "URL tried: $XRAY_URL"
+        echo "URL: $XRAY_URL"
+        echo "Tried $MAX_RETRIES times"
         cd ..
         exit 1
     fi
     
-    unzip -q ${XRAY_FILENAME}
+    # Extract
+    unzip -q ${XRAY_FILENAME} 2>&1 || {
+        echo "ERROR: Failed to extract ${XRAY_FILENAME}"
+        cd ..
+        exit 1
+    }
     rm ${XRAY_FILENAME}
     
-    # Rename xray binary
+    # Rename xray binary to match expected name
     if [ "$ARCH" = "armv7" ]; then
-        mv xray xray-linux-armv7 2>/dev/null || true
+        mv xray xray-linux-armv7 2>/dev/null || {
+            echo "ERROR: xray binary not found in zip"
+            ls -la
+            cd ..
+            exit 1
+        }
         chmod +x xray-linux-armv7
     else
-        mv xray xray-linux-$ARCH 2>/dev/null || true
+        mv xray xray-linux-$ARCH 2>/dev/null || {
+            echo "ERROR: xray binary not found in zip"
+            ls -la
+            cd ..
+            exit 1
+        }
         chmod +x xray-linux-$ARCH
-    fi
-    
-    # Check if file exists
-    if [ ! -f "xray-linux-$ARCH" ] && [ ! -f "xray-linux-armv7" ]; then
-        echo "ERROR: Xray binary not found after extraction"
-        ls -la
-        cd ..
-        exit 1
     fi
     
     cd ..
