@@ -37,25 +37,70 @@ for ARCH in "${ARCHES[@]}"; do
     cd bin-$ARCH
     
     XRAY_ARCH=$ARCH
+    XRAY_FILENAME="Xray-linux-${ARCH}.zip"
+    
     if [ "$ARCH" = "armv7" ]; then
         XRAY_ARCH="arm32-v7a"
+        XRAY_FILENAME="Xray-linux-arm32-v7a.zip"
     elif [ "$ARCH" = "arm64" ]; then
         XRAY_ARCH="arm64-v8a"
+        XRAY_FILENAME="Xray-linux-arm64-v8a.zip"
     fi
     
+    # Get latest Xray version
     XRAY_VERSION=$(curl -s "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$XRAY_VERSION" ]; then
+        echo "Failed to get Xray version, trying to download latest..."
+        XRAY_VERSION="latest"
+    fi
+    
     echo "Downloading Xray $XRAY_VERSION for $XRAY_ARCH..."
     
-    wget -q https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-${XRAY_ARCH}.zip
-    unzip -q Xray-linux-${XRAY_ARCH}.zip
-    rm Xray-linux-${XRAY_ARCH}.zip
-    
-    if [ "$ARCH" = "armv7" ]; then
-        mv xray xray-linux-armv7
-    else
-        mv xray xray-linux-$ARCH
+    # Try different URL formats
+    XRAY_URL="https://github.com/XTLS/Xray-core/releases/${XRAY_VERSION}/download/${XRAY_FILENAME}"
+    if [ "$XRAY_VERSION" = "latest" ]; then
+        XRAY_URL="https://github.com/XTLS/Xray-core/releases/latest/download/${XRAY_FILENAME}"
     fi
-    chmod +x xray-linux-*
+    
+    # Download with retry
+    MAX_RETRIES=3
+    RETRY=0
+    while [ $RETRY -lt $MAX_RETRIES ]; do
+        if wget -q --timeout=30 ${XRAY_URL} -O ${XRAY_FILENAME}; then
+            break
+        fi
+        RETRY=$((RETRY+1))
+        echo "Download failed, retrying... ($RETRY/$MAX_RETRIES)"
+        sleep 2
+    done
+    
+    if [ ! -f "${XRAY_FILENAME}" ]; then
+        echo "ERROR: Failed to download Xray binary for $ARCH"
+        echo "URL tried: $XRAY_URL"
+        cd ..
+        exit 1
+    fi
+    
+    unzip -q ${XRAY_FILENAME}
+    rm ${XRAY_FILENAME}
+    
+    # Rename xray binary
+    if [ "$ARCH" = "armv7" ]; then
+        mv xray xray-linux-armv7 2>/dev/null || true
+        chmod +x xray-linux-armv7
+    else
+        mv xray xray-linux-$ARCH 2>/dev/null || true
+        chmod +x xray-linux-$ARCH
+    fi
+    
+    # Check if file exists
+    if [ ! -f "xray-linux-$ARCH" ] && [ ! -f "xray-linux-armv7" ]; then
+        echo "ERROR: Xray binary not found after extraction"
+        ls -la
+        cd ..
+        exit 1
+    fi
+    
     cd ..
     
     # Create release directory
