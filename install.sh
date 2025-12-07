@@ -248,7 +248,13 @@ install_x-ui() {
         
         # Create tarball in /usr/local
         cd /usr/local
+        # Create tarball from BUILD_DIR
         tar czf x-ui-linux-$(arch).tar.gz -C ${BUILD_DIR} x-ui x-ui.sh x-ui.service bin/
+        if [[ $? -ne 0 ]]; then
+            echo -e "${red}Failed to create tarball${plain}"
+            rm -rf ${BUILD_DIR}
+            exit 1
+        fi
         rm -rf ${BUILD_DIR}
         echo -e "${green}Build completed successfully!${plain}"
     fi
