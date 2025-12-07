@@ -1,6 +1,7 @@
 package network
 
 import (
+	"bufio"
 	"io"
 	"net"
 	"net/http"
@@ -66,8 +67,9 @@ func (p *WSJWTProxy) Stop() error {
 func (p *WSJWTProxy) handleConnection(clientConn net.Conn) {
 	defer clientConn.Close()
 
-	// Read HTTP request
-	req, err := http.ReadRequest(NewBufConn(clientConn))
+	// Read HTTP request using bufio.Reader
+	reader := bufio.NewReader(clientConn)
+	req, err := http.ReadRequest(reader)
 	if err != nil {
 		logger.Debug("Failed to read HTTP request:", err)
 		return
@@ -142,22 +144,4 @@ func isWebSocketUpgrade(req *http.Request) bool {
 	return upgrade == "websocket" && strings.Contains(connection, "upgrade")
 }
 
-// BufConn is a wrapper around net.Conn that allows reading HTTP requests
-type BufConn struct {
-	net.Conn
-	buf []byte
-}
-
-func NewBufConn(conn net.Conn) *BufConn {
-	return &BufConn{Conn: conn}
-}
-
-func (bc *BufConn) Read(p []byte) (n int, err error) {
-	if len(bc.buf) > 0 {
-		n = copy(p, bc.buf)
-		bc.buf = bc.buf[n:]
-		return n, nil
-	}
-	return bc.Conn.Read(p)
-}
 

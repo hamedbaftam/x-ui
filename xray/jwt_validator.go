@@ -54,9 +54,13 @@ func ValidateJWTInPath(path string) bool {
 		})
 	} else {
 		// No secret set, only check expiration without signature verification
-		token, err = jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			return []byte(""), nil
-		}, jwt.WithoutVerification())
+		// Use ParseUnverified to skip signature verification in jwt/v5
+		parser := jwt.NewParser()
+		token, _, err = parser.ParseUnverified(tokenStr, jwt.MapClaims{})
+		if err == nil {
+			// Mark token as valid since we're not verifying signature
+			token.Valid = true
+		}
 	}
 
 	if err != nil {

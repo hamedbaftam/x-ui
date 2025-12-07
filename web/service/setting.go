@@ -327,6 +327,17 @@ func (s *SettingService) GetSecret() ([]byte, error) {
 	return []byte(secret), err
 }
 
+func (s *SettingService) GetJWTSecret() ([]byte, error) {
+	secret, err := s.getString("jwtSecret")
+	if secret == defaultValueMap["jwtSecret"] {
+		err := s.saveSetting("jwtSecret", secret)
+		if err != nil {
+			logger.Warning("save jwt secret failed:", err)
+		}
+	}
+	return []byte(secret), err
+}
+
 func (s *SettingService) SetBasePath(basePath string) error {
 	if !strings.HasPrefix(basePath, "/") {
 		basePath = "/" + basePath
