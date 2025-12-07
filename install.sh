@@ -209,26 +209,46 @@ install_x-ui() {
         go build -ldflags "-w -s" -o x-ui main.go
         
         # Download xray binary
-        XRAY_ARCH=$(arch)
-        case "${XRAY_ARCH}" in
-            x86_64 | x64 | amd64) XRAY_ARCH="amd64" ;;
-            armv8* | armv8 | arm64 | aarch64) XRAY_ARCH="arm64" ;;
-            armv7* | armv7 | arm) XRAY_ARCH="armv7" ;;
-            *) XRAY_ARCH="amd64" ;;
+        XRAY_ARCH_NAME=$(arch)
+        case "${XRAY_ARCH_NAME}" in
+            x86_64 | x64 | amd64) 
+                XRAY_FILENAME="Xray-linux-64.zip"
+                XRAY_BINARY_NAME="xray-linux-amd64"
+                ;;
+            armv8* | armv8 | arm64 | aarch64) 
+                XRAY_FILENAME="Xray-linux-arm64-v8a.zip"
+                XRAY_BINARY_NAME="xray-linux-arm64"
+                ;;
+            armv7* | armv7 | arm) 
+                XRAY_FILENAME="Xray-linux-arm32-v7a.zip"
+                XRAY_BINARY_NAME="xray-linux-armv7"
+                ;;
+            *) 
+                XRAY_FILENAME="Xray-linux-64.zip"
+                XRAY_BINARY_NAME="xray-linux-amd64"
+                ;;
         esac
         
         mkdir -p bin
         cd bin
         XRAY_VERSION=$(curl -s "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        wget -N --no-check-certificate https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-${XRAY_ARCH}.zip
-        unzip -q Xray-linux-${XRAY_ARCH}.zip
-        rm Xray-linux-${XRAY_ARCH}.zip
-        mv xray xray-linux-${XRAY_ARCH}
-        chmod +x xray-linux-${XRAY_ARCH}
+        echo -e "${yellow}Downloading Xray ${XRAY_VERSION} (${XRAY_FILENAME})...${plain}"
+        wget -N --no-check-certificate https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_FILENAME}
+        if [[ $? -ne 0 ]]; then
+            echo -e "${red}Failed to download Xray binary${plain}"
+            cd ..
+            rm -rf ${BUILD_DIR}
+            exit 1
+        fi
+        unzip -q ${XRAY_FILENAME}
+        rm ${XRAY_FILENAME}
+        mv xray ${XRAY_BINARY_NAME}
+        chmod +x ${XRAY_BINARY_NAME}
         cd ..
         
-        # Create tarball
-        tar czf /usr/local/x-ui-linux-$(arch).tar.gz x-ui x-ui.sh x-ui.service bin/
+        # Create tarball in /usr/local
+        cd /usr/local
+        tar czf x-ui-linux-$(arch).tar.gz -C ${BUILD_DIR} x-ui x-ui.sh x-ui.service bin/
         rm -rf ${BUILD_DIR}
         echo -e "${green}Build completed successfully!${plain}"
     fi
@@ -236,20 +256,36 @@ install_x-ui() {
     if [[ -e /usr/local/x-ui/ ]]; then
         systemctl stop x-ui
         mv /usr/local/x-ui/ /usr/local/x-ui-backup/ -f
-        cp /etc/x-ui/x-ui.db /usr/local/x-ui-backup/ -f
+        if [[ -e /etc/x-ui/x-ui.db ]]; then
+            cp /etc/x-ui/x-ui.db /usr/local/x-ui-backup/ -f
+        fi
     fi
 
-    tar zxvf x-ui-linux-$(arch).tar.gz
+    cd /usr/local
+    if [[ ! -f x-ui-linux-$(arch).tar.gz ]]; then
+        echo -e "${red}Build tarball not found!${plain}"
+        exit 1
+    fi
+    
+    mkdir -p x-ui
+    tar zxvf x-ui-linux-$(arch).tar.gz -C x-ui
     rm x-ui-linux-$(arch).tar.gz -f
     cd x-ui
     chmod +x x-ui
 
     # Check the system's architecture and rename the file accordingly
     if [[ $(arch) == "armv7" ]]; then
-        mv bin/xray-linux-$(arch) bin/xray-linux-arm
-        chmod +x bin/xray-linux-arm
+        if [[ -f bin/xray-linux-armv7 ]]; then
+            mv bin/xray-linux-armv7 bin/xray-linux-arm
+            chmod +x bin/xray-linux-arm
+        fi
     fi
-    chmod +x x-ui bin/xray-linux-$(arch)
+    
+    # Make sure binaries are executable
+    chmod +x x-ui
+    if ls bin/xray-linux-* 1> /dev/null 2>&1; then
+        chmod +x bin/xray-linux-*
+    fi
     cp -f x-ui.service /etc/systemd/system/
     # Download x-ui.sh from your repository
     GITHUB_USER="hamedbaftam"
