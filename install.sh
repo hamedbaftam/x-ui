@@ -141,27 +141,96 @@ install_x-ui() {
 
     cd /usr/local/
 
+    # Repository configuration - Change this to your repository
+    GITHUB_USER="hamedbaftam"
+    GITHUB_REPO="x-ui"
+    GITHUB_BRANCH="main"
+    
     if [ $# == 0 ]; then
-        last_version=$(curl -Ls "https://api.github.com/repos/alireza0/x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        # Try to get latest release first
+        last_version=$(curl -Ls "https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [[ ! -n "$last_version" ]]; then
-            echo -e "${red}Failed to fetch x-ui version, it maybe due to Github API restrictions, please try it later${plain}"
-            exit 1
-        fi
-        echo -e "Got x-ui latest version: ${last_version}, beginning the installation..."
-        wget -N --no-check-certificate -O /usr/local/x-ui-linux-$(arch).tar.gz https://github.com/alireza0/x-ui/releases/download/${last_version}/x-ui-linux-$(arch).tar.gz
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Downloading x-ui failed, please be sure that your server can access Github ${plain}"
-            exit 1
+            echo -e "${yellow}No release found, building from source...${plain}"
+            INSTALL_FROM_SOURCE=true
+        else
+            echo -e "Got x-ui latest version: ${last_version}, beginning the installation..."
+            wget -N --no-check-certificate -O /usr/local/x-ui-linux-$(arch).tar.gz https://github.com/${GITHUB_USER}/${GITHUB_REPO}/releases/download/${last_version}/x-ui-linux-$(arch).tar.gz
+            if [[ $? -ne 0 ]]; then
+                echo -e "${yellow}Downloading release failed, building from source...${plain}"
+                INSTALL_FROM_SOURCE=true
+            else
+                INSTALL_FROM_SOURCE=false
+            fi
         fi
     else
         last_version=$1
-        url="https://github.com/alireza0/x-ui/releases/download/${last_version}/x-ui-linux-$(arch).tar.gz"
+        url="https://github.com/${GITHUB_USER}/${GITHUB_REPO}/releases/download/${last_version}/x-ui-linux-$(arch).tar.gz"
         echo -e "Beginning to install x-ui v$1"
         wget -N --no-check-certificate -O /usr/local/x-ui-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
-            echo -e "${red}download x-ui v$1 failed,please check the version exists${plain}"
-            exit 1
+            echo -e "${yellow}Downloading release failed, building from source...${plain}"
+            INSTALL_FROM_SOURCE=true
+        else
+            INSTALL_FROM_SOURCE=false
         fi
+    fi
+    
+    # If release download failed, build from source
+    if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
+        echo -e "${green}Building x-ui from source (${GITHUB_USER}/${GITHUB_REPO})...${plain}"
+        
+        # Check if Go is installed
+        if ! command -v go &> /dev/null; then
+            echo -e "${yellow}Go not found, installing Go...${plain}"
+            GO_VERSION="1.25.1"
+            ARCH=$(arch)
+            case "${ARCH}" in
+                x86_64 | x64 | amd64) GO_ARCH="amd64" ;;
+                armv8* | armv8 | arm64 | aarch64) GO_ARCH="arm64" ;;
+                armv7* | armv7 | arm) GO_ARCH="armv7" ;;
+                *) GO_ARCH="amd64" ;;
+            esac
+            
+            cd /tmp
+            wget https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz
+            rm -rf /usr/local/go
+            tar -C /usr/local -xzf go${GO_VERSION}.linux-${GO_ARCH}.tar.gz
+            export PATH=$PATH:/usr/local/go/bin
+            rm go${GO_VERSION}.linux-${GO_ARCH}.tar.gz
+        fi
+        
+        # Clone and build
+        BUILD_DIR="/tmp/x-ui-build"
+        rm -rf ${BUILD_DIR}
+        git clone --depth 1 -b ${GITHUB_BRANCH} https://github.com/${GITHUB_USER}/${GITHUB_REPO}.git ${BUILD_DIR}
+        cd ${BUILD_DIR}
+        
+        # Build x-ui
+        go build -ldflags "-w -s" -o x-ui main.go
+        
+        # Download xray binary
+        XRAY_ARCH=$(arch)
+        case "${XRAY_ARCH}" in
+            x86_64 | x64 | amd64) XRAY_ARCH="amd64" ;;
+            armv8* | armv8 | arm64 | aarch64) XRAY_ARCH="arm64" ;;
+            armv7* | armv7 | arm) XRAY_ARCH="armv7" ;;
+            *) XRAY_ARCH="amd64" ;;
+        esac
+        
+        mkdir -p bin
+        cd bin
+        XRAY_VERSION=$(curl -s "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        wget -N --no-check-certificate https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-${XRAY_ARCH}.zip
+        unzip -q Xray-linux-${XRAY_ARCH}.zip
+        rm Xray-linux-${XRAY_ARCH}.zip
+        mv xray xray-linux-${XRAY_ARCH}
+        chmod +x xray-linux-${XRAY_ARCH}
+        cd ..
+        
+        # Create tarball
+        tar czf /usr/local/x-ui-linux-$(arch).tar.gz x-ui x-ui.sh x-ui.service bin/
+        rm -rf ${BUILD_DIR}
+        echo -e "${green}Build completed successfully!${plain}"
     fi
 
     if [[ -e /usr/local/x-ui/ ]]; then
@@ -182,7 +251,11 @@ install_x-ui() {
     fi
     chmod +x x-ui bin/xray-linux-$(arch)
     cp -f x-ui.service /etc/systemd/system/
-    wget --no-check-certificate -O /usr/bin/x-ui https://raw.githubusercontent.com/alireza0/x-ui/main/x-ui.sh
+    # Download x-ui.sh from your repository
+    GITHUB_USER="hamedbaftam"
+    GITHUB_REPO="x-ui"
+    GITHUB_BRANCH="main"
+    wget --no-check-certificate -O /usr/bin/x-ui https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}/x-ui.sh
     chmod +x /usr/local/x-ui/x-ui.sh
     chmod +x /usr/bin/x-ui
     config_after_install

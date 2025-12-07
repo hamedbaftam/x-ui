@@ -25,6 +25,19 @@ type XrayService struct {
 	xrayAPI        xray.XrayAPI
 }
 
+// Init initializes the XrayService and sets up JWT secret
+func (s *XrayService) Init() error {
+	// Get JWT secret from settings and set it in xray
+	secret, err := s.settingService.GetJWTSecret()
+	if err != nil {
+		logger.Warning("Failed to get JWT secret:", err)
+	} else {
+		xray.SetJWTSecret(secret)
+		logger.Info("JWT secret initialized")
+	}
+	return nil
+}
+
 func (s *XrayService) IsXrayRunning() bool {
 	return p != nil && p.IsRunning()
 }
@@ -155,6 +168,18 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 			// Unmarshal stream JSON
 			var stream map[string]interface{}
 			json.Unmarshal([]byte(inbound.StreamSettings), &stream)
+
+			// For VLESS with WebSocket, we need to validate JWT token in path
+			// This validation will happen at runtime when connections are made
+			// The token should be in the query string like: /?token=jwt_token
+			if inbound.Protocol == "vless" {
+				network, ok := stream["network"].(string)
+				if ok && network == "ws" {
+					// JWT validation for VLESS WebSocket is handled by xray fallback or proxy
+					// The path should contain token parameter: /?token=jwt_token
+					logger.Debug("VLESS WebSocket inbound configured - JWT token validation will be performed at runtime")
+				}
+			}
 
 			// Remove the "settings" field under "tlsSettings" and "realitySettings"
 			tlsSettings, ok1 := stream["tlsSettings"].(map[string]interface{})

@@ -63,6 +63,7 @@ var defaultValueMap = map[string]string{
 	"subJsonMux":         "",
 	"subJsonRules":       "",
 	"warp":               "",
+	"jwtSecret":          "x-ui-jwt-secret-key-change-this-in-production",
 }
 
 type SettingService struct{}

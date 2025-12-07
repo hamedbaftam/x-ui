@@ -350,6 +350,11 @@ func (s *Server) Start() (err error) {
 		s.httpServer.Serve(listener)
 	}()
 
+	// Initialize JWT secret key
+	if err := s.xrayService.Init(); err != nil {
+		logger.Warning("Failed to initialize JWT secret:", err)
+	}
+
 	s.startTask()
 
 	isTgbotenabled, err := s.settingService.GetTgbotenabled()
